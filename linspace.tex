@@ -1,0 +1,143 @@
+\documentclass{article}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage{stmaryrd}
+
+\DeclareMathOperator*{\fl}{fl}
+\DeclareMathOperator*{\round}{round}
+
+
+\begin{document}
+
+The problem: We want to interpolate linearly between two floats $a$ and $b$, at $n$ steps. In other words, compute the function
+
+\begin{equation*}
+  \rho_i = a \frac{n-i}{n-1} + b \frac{i-1}{n-1}
+\end{equation*}
+at $i = 1,\ldots, n$. Ideally we want this to be correctly rounded.
+
+Our approach is to construct an object containing:
+\begin{itemize}
+\item $n$: the length
+\item $i_0$: the index of the element closest to zero.
+\item $\tilde z$: $\rho_{i_0}$ stored in twice precision (``double-double'' format)
+\item $\tilde s$: an approximation of the step size
+  \begin{equation*}
+    s = \frac{b-a}{n-1}.
+  \end{equation*}
+  This is stored in a twice precision layout, but at slightly reduced precision (see below).
+\end{itemize}
+
+Additionally, we define:
+\begin{itemize}
+\item $p$: the precision of the floating point format (i.e. $p=53$ for IEEE binary64).
+  \begin{itemize}
+  \item We also assume that $n \leq 2^p$.
+  \end{itemize}
+\item $r$: an integer such that $|i - i_0| < 2^r$. At worst, we can take $r = p$.
+\end{itemize}
+
+We denote twice-precision numbers with a tilde. If $\tilde x$ is twice precision, we write the high bits as $\tilde x_h$ and the low bits as $\tilde x_l$.
+
+We write
+\begin{equation*}
+  \llfloor x \rrfloor
+\end{equation*}
+for the smallest element of the binade containing $x$, i.e. largest integer power of 2 $2^u \leq |x|$.
+
+Now we need to compute
+
+\begin{equation*}
+  \tilde \rho_i = \tilde z + \tilde s \times (i - i_0)
+\end{equation*}
+
+
+There are 4 sources of error:
+\begin{enumerate}
+\item $\tilde z$ as an approximation of $\rho_{i_0}$
+\item $\tilde s$ as an approximation of $s$
+\item the operation $ \tilde y = \tilde s \times (i-i_0)$.
+\item the operation $ \tilde \rho_i = \tilde z + \tilde y$.
+\end{enumerate}
+
+\section{Calculating $\tilde z$}
+\label{sec:calculating-tilde-z}
+
+If $a$ and $b$ have the same signs, we choose $z$ (and hence $\tilde z$) to be the one with the smaller magnitude. This is obviously exact.
+
+Otherwise, we calculate $\tilde z$ as follows:
+
+\begin{equation*}
+  \tilde z = \frac{a \times (n-i_0) + b \times (i_0 - 1)}{n-1}
+\end{equation*}
+The multiplications are performed using twice precision, so are exact. Call the intermediate results $A$ and $B$ respectively.
+
+Now I'm pretty sure that $1/2 \leq |A/B| \leq 2$, which would imply that the result is exact.
+
+Moreover, this implies that $A_h + B_h$ is also exact, so will save us some operations.
+
+Hence the only error is incurred in the final division, hence
+
+\begin{equation*}
+|\epsilon_z| \leq \llfloor z \rrfloor \times 2^{-2p} 
+\end{equation*}
+(TODO: figure this out exactly)
+
+
+
+\section{Calculating $\tilde s$}
+\label{sec:calculating-tilde-s}
+
+We store $\tilde s$ so that $\tilde s_h$ with only $q = \max(1, p-r)$ significant bits (i.e. the remaining $p-q$ bits are zero). This ensures that the operation
+\begin{equation*}
+  \tilde s_h \times (i - i_0)
+\end{equation*}
+is exact. Moreover, we assume that $\tilde s_h$ is computed optimally, then
+\begin{equation*}
+  |s - \tilde s_h| \leq \llfloor s \rrfloor \times 2^{-q}
+\end{equation*}
+
+This implies that
+\begin{equation*}
+  |s - \tilde s| \leq \llfloor s \rrfloor \times 2^{-q-p-2} \leq \llfloor s \rrfloor \times \frac{1}{8}
+\end{equation*}
+
+\section{Multiplication}
+\label{sec:multiplication}
+
+\section{Addition}
+\label{sec:addition}
+
+\begin{equation*}
+  |(\tilde z \boxplus \tilde y) - (x + y) | \leq |(\tilde x \boxplus \tilde y) - (\tilde x + \tilde y)| + \epsilon_z + \epsilon_y
+\end{equation*}
+
+
+
+
+Ideally, we would calculate $i_0$ as
+\begin{equation*}
+  i_0 = \round \left(\frac{a n - b }{a-b} \right)
+\end{equation*}
+
+Let's say we can compute $i_0$ such that
+\begin{equation*}
+  |\rho_i| \geq \frac{1}{2} |\rho_{i_0}| \quad \forall i
+\end{equation*}
+
+
+
+%$|\tilde \rho_i - \rho_i | \leq 0.7 \ulp(\rho)$??
+
+
+
+
+\end{document}
+
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:
