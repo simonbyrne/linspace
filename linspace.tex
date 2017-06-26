@@ -7,61 +7,72 @@
 \DeclareMathOperator*{\fl}{fl}
 \DeclareMathOperator*{\round}{round}
 
+% "binade" - a "Binary decade".  Binade floor: the smallest power of two less
+% than or equal to the given number
+\newcommand{\binadefloor}[1]{\llfloor #1 \rrfloor}
 
 \begin{document}
 
-The problem: We want to interpolate linearly between two floats $a$ and $b$, at $n$ steps. In other words, compute the function
+\section{The Problem}
 
+We want to interpolate linearly between two floats $a$ and $b$, with $n$
+steps. In other words, compute the function
 \begin{equation*}
   \rho_i = a \frac{n-i}{n-1} + b \frac{i-1}{n-1}
 \end{equation*}
-at $i = 1,\ldots, n$. Ideally we want this to be correctly rounded.
+at $i = 1,\ldots, n$.  For numerical robustness, we require that our
+numerical approximation $\bar\rho_i$ exactly hits the end points, that is,
+$\bar\rho_1 = a$ and $\bar\rho_n = b$.  Ideally we also want it to be
+correctly rounded in the interior of the interval, but may trade off some
+accuracy for speed.
+
+
+\section{Notation}
+
+We define:
+\begin{itemize}
+\item $p$: the precision of the floating point format in bits (i.e. $p=53$ for IEEE binary64).  We also assume that $n \leq 2^p$.
+\item $r$: an integer such that $|i - i_0| < 2^r$. At worst, we can take $r = p$. 
+  (FIXME)
+\end{itemize}
+
+We denote twice-precision numbers with a tilde. If $\tilde x$ is twice
+precision, we write the floating point parts containing the high and low bits
+as $\tilde x_h$ and $\tilde x_l$.
+
+We write
+\begin{equation*}
+  \binadefloor{x}
+\end{equation*}
+for the smallest element of the binade containing $x$, i.e. largest integer
+power of $2$ such that $2^u \leq |x|$.
+
+
+\section{Algorithm}
 
 Our approach is to construct an object containing:
 \begin{itemize}
 \item $n$: the length
 \item $i_0$: the index of the element closest to zero.
 \item $\tilde z$: $\rho_{i_0}$ stored in twice precision (``double-double'' format)
-\item $\tilde s$: an approximation of the step size
-  \begin{equation*}
-    s = \frac{b-a}{n-1}.
-  \end{equation*}
-  This is stored in a twice precision layout, but at slightly reduced precision (see below).
+\item $\tilde s$: an approximation of the step size $s = (b-a)/(n-1)$
+  stored in a twice precision \emph{layout}, but at reduced precision.
 \end{itemize}
-
-Additionally, we define:
-\begin{itemize}
-\item $p$: the precision of the floating point format (i.e. $p=53$ for IEEE binary64).
-  \begin{itemize}
-  \item We also assume that $n \leq 2^p$.
-  \end{itemize}
-\item $r$: an integer such that $|i - i_0| < 2^r$. At worst, we can take $r = p$.
-\end{itemize}
-
-We denote twice-precision numbers with a tilde. If $\tilde x$ is twice precision, we write the high bits as $\tilde x_h$ and the low bits as $\tilde x_l$.
-
-We write
-\begin{equation*}
-  \llfloor x \rrfloor
-\end{equation*}
-for the smallest element of the binade containing $x$, i.e. largest integer power of 2 $2^u \leq |x|$.
 
 Now we need to compute
-
 \begin{equation*}
-  \tilde \rho_i = \tilde z + \tilde s \times (i - i_0)
+  \bar\rho_i = \tilde z + \tilde s \times (i - i_0)
 \end{equation*}
-
 
 There are 4 sources of error:
 \begin{enumerate}
 \item $\tilde z$ as an approximation of $\rho_{i_0}$
 \item $\tilde s$ as an approximation of $s$
 \item the operation $ \tilde y = \tilde s \times (i-i_0)$.
-\item the operation $ \tilde \rho_i = \tilde z + \tilde y$.
+\item the operation $ \bar\rho_i = \tilde z + \tilde y$.
 \end{enumerate}
 
-\section{Calculating $\tilde z$}
+\subsection{Calculating $\tilde z$}
 \label{sec:calculating-tilde-z}
 
 If $a$ and $b$ have the same signs, we choose $z$ (and hence $\tilde z$) to be the one with the smaller magnitude. This is obviously exact.
@@ -71,22 +82,26 @@ Otherwise, we calculate $\tilde z$ as follows:
 \begin{equation*}
   \tilde z = \frac{a \times (n-i_0) + b \times (i_0 - 1)}{n-1}
 \end{equation*}
-The multiplications are performed using twice precision, so are exact. Call the intermediate results $A$ and $B$ respectively.
+The multiplications are performed using twice precision beginning with numbers 
+in once precision, so are exact. Call the intermediate results $A$ and $B$
+respectively.
 
-Now I'm pretty sure that $1/2 \leq |A/B| \leq 2$, which would imply that the result is exact.
+Now I'm pretty sure that $1/2 \leq |A/B| \leq 2$, which would imply that the 
+result is exact.  Moreover, this implies that $A_h + B_h$ is also exact, so
+will save us some operations.
 
-Moreover, this implies that $A_h + B_h$ is also exact, so will save us some operations.
+\textbf{CJF - this is not the case; consider $n=2$ for example, and put $A$ nearer the origin.}
 
 Hence the only error is incurred in the final division, hence
 
 \begin{equation*}
-|\epsilon_z| \leq \llfloor z \rrfloor \times 2^{-2p} 
+|\epsilon_z| \leq \binadefloor{z} \times 2^{-2p} 
 \end{equation*}
 (TODO: figure this out exactly)
 
 
 
-\section{Calculating $\tilde s$}
+\subsection{Calculating $\tilde s$}
 \label{sec:calculating-tilde-s}
 
 We store $\tilde s$ so that $\tilde s_h$ with only $q = \max(1, p-r)$ significant bits (i.e. the remaining $p-q$ bits are zero). This ensures that the operation
@@ -95,25 +110,25 @@ We store $\tilde s$ so that $\tilde s_h$ with only $q = \max(1, p-r)$ significan
 \end{equation*}
 is exact. Moreover, we assume that $\tilde s_h$ is computed optimally, then
 \begin{equation*}
-  |s - \tilde s_h| \leq \llfloor s \rrfloor \times 2^{-q}
+  |s - \tilde s_h| \leq \binadefloor{s} \times 2^{-q}
 \end{equation*}
 
 This implies that
 \begin{equation*}
-  |s - \tilde s| \leq \llfloor s \rrfloor \times 2^{-q-p-2} \leq \llfloor s \rrfloor \times \frac{1}{8}
+  |s - \tilde s| \leq \binadefloor{s} \times 2^{-q-p-2} \leq \binadefloor{s} \times \frac{1}{8}
 \end{equation*}
 
-\section{Multiplication}
+
+\subsection{Multiplication}
 \label{sec:multiplication}
 
-\section{Addition}
+
+\subsection{Addition}
 \label{sec:addition}
 
 \begin{equation*}
   |(\tilde z \boxplus \tilde y) - (x + y) | \leq |(\tilde x \boxplus \tilde y) - (\tilde x + \tilde y)| + \epsilon_z + \epsilon_y
 \end{equation*}
-
-
 
 
 Ideally, we would calculate $i_0$ as
@@ -128,7 +143,7 @@ Let's say we can compute $i_0$ such that
 
 
 
-%$|\tilde \rho_i - \rho_i | \leq 0.7 \ulp(\rho)$??
+%$|\bar\rho_i - \rho_i | \leq 0.7 \ulp(\rho)$??
 
 
 
